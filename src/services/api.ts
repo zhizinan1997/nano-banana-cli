@@ -1,7 +1,7 @@
 import type { ApiModel, GenerateRequest, GenerateResponse, ModelListResponse } from '../types'
 import { DEFAULT_API_ENDPOINT, DEFAULT_MODEL_ID, DEFAULT_API_KEY } from '../config/api'
 
-export async function generateImage(request: GenerateRequest, maxRetries: number = 5): Promise<GenerateResponse> {
+export async function generateImage(request: GenerateRequest, maxRetries: number = 2): Promise<GenerateResponse> {
     let lastError: Error | null = null
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -105,22 +105,41 @@ export async function generateImage(request: GenerateRequest, maxRetries: number
 
             const extractFromString = (input: string): string | null => {
                 if (!input || typeof input !== 'string') return null
-                // 先尝试直接匹配图片 URL
                 const direct = input.match(urlRegex)
                 if (direct && direct[1]) return direct[1]
-                // 尝试从反引号内容中提取
                 const bt = input.match(/`([^`]+)`/)
                 if (bt && bt[1]) {
                     const inBt = bt[1].match(urlRegex)
                     if (inBt && inBt[1]) return inBt[1]
-                    // 如果反引号里就是 data:image，直接返回
                     if (bt[1].startsWith('data:image/')) return bt[1]
-                    // 否则返回反引号内容的 trimmed 值
                     return bt[1].trim()
                 }
-                // 支持 base64 data URI
                 if (input.startsWith('data:image/')) return input
                 if (looksLikeBase64(input)) return input
+                return null
+            }
+
+            const extractFromContentArray = (arr: any[]): string | null => {
+                for (const item of arr) {
+                    if (!item) continue
+                    if (item.image_url && typeof item.image_url.url === 'string') {
+                        return item.image_url.url
+                    }
+                    if (typeof item.text === 'string') {
+                        const s = extractFromString(item.text)
+                        if (s) return s
+                    }
+                    if (typeof item.url === 'string') {
+                        const s = extractFromString(item.url)
+                        if (s) return s
+                    }
+                    if (typeof item.data === 'string' && looksLikeBase64(item.data)) {
+                        return item.data
+                    }
+                    if (typeof item.b64_json === 'string' && looksLikeBase64(item.b64_json)) {
+                        return item.b64_json
+                    }
+                }
                 return null
             }
 
@@ -134,16 +153,27 @@ export async function generateImage(request: GenerateRequest, maxRetries: number
                 imageUrl = extractFromString(message)
             } else if (message?.images?.[0]?.image_url?.url) {
                 imageUrl = message.images[0].image_url.url
+            } else if (Array.isArray(message?.content)) {
+                imageUrl = extractFromContentArray(message.content)
             } else if (typeof message?.content === 'string') {
                 imageUrl = extractFromString(message.content)
             }
 
-            // 回退：在整个响应中查找第一个图片 URL
             if (!imageUrl) {
                 const serialized = JSON.stringify(data)
                 const fallbackMatch = serialized.match(urlRegex)
                 if (fallbackMatch && fallbackMatch[1]) {
                     imageUrl = fallbackMatch[1]
+                } else {
+                    const dataUriMatch = serialized.match(/data:image\/[a-zA-Z0-9+]+;base64,[A-Za-z0-9+/=]+/)
+                    if (dataUriMatch && dataUriMatch[0]) {
+                        imageUrl = dataUriMatch[0]
+                    } else {
+                        const b64Match = serialized.match(/"(?:image_base64|b64_json)"\s*:\s*"([A-Za-z0-9+/=\s]+)"/)
+                        if (b64Match && b64Match[1] && looksLikeBase64(b64Match[1])) {
+                            imageUrl = b64Match[1]
+                        }
+                    }
                 }
             }
 
@@ -196,7 +226,7 @@ export async function fetchModels(apikey: string, endpoint: string): Promise<Api
     const response = await fetch(modelsUrl, {
         method: 'GET',
         headers: {
-            Authorization: `Bearer ${DEFAULT_API_KEY}`,
+            Authorization: `Bearer ${apikey || DEFAULT_API_KEY}`,
             'Content-Type': 'application/json'
         }
     })

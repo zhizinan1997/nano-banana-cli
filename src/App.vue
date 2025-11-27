@@ -150,10 +150,10 @@ import ResultDisplay from './components/ResultDisplay.vue'
 import Footer from './components/Footer.vue'
 import AspectRatioSelector from './components/AspectRatioSelector.vue'
 import Gemini3ProConfig from './components/Gemini3ProConfig.vue'
-import { fetchModels, generateImage } from './services/api'
+import { generateImage } from './services/api'
 import { styleTemplates } from './data/templates'
 import { LocalStorage } from './utils/storage'
-import type { ApiModel, GenerateRequest, ModelOption } from './types'
+import type { GenerateRequest, ModelOption } from './types'
 import { DEFAULT_API_ENDPOINT, DEFAULT_MODEL_ID } from './config/api'
 
 const apiKey = ref('')
@@ -171,7 +171,7 @@ const isTextToImageLoading = ref(false)
 const latestResultSource = ref<'text' | 'image' | null>(null)
 const modelOptions = ref<ModelOption[]>([])
 const selectedModel = ref('gemini-draw')  // 改为空字符串，避免初始化时使用默认值
-const isFetchingModels = ref(false)
+ 
 const modelsError = ref<string | null>(null)
 const selectedAspectRatio = ref('1:1')  // 默认宽高比为 1:1
 let hasSyncedInitialEndpoint = false
@@ -275,107 +275,9 @@ watch(
     { immediate: false }
 )
 
-const handleFetchModels = async () => {
-    if (!apiKey.value.trim() || !apiEndpoint.value.trim()) return
 
-    isFetchingModels.value = true
-    modelsError.value = null
 
-    try {
-        const rawModels = await fetchModels(apiKey.value, apiEndpoint.value)
-        const options = mapModelsToOptions(rawModels)
 
-        if (!options.length) {
-            throw new Error('未找到可用模型')
-        }
-
-        modelOptions.value = options
-        LocalStorage.saveModelCache(apiEndpoint.value, options)
-
-        const preferred =
-            options.find(option => option.id === selectedModel.value) ||
-            options.find(option => option.id === DEFAULT_MODEL_ID) ||
-            options.find(option => option.supportsImages) ||
-            options[0]
-
-        selectedModel.value = preferred.id
-        ensureSelectedOptionPresent()
-    } catch (fetchError) {
-        modelsError.value = fetchError instanceof Error ? fetchError.message : '无法获取模型列表'
-        modelOptions.value = []
-        selectedModel.value = DEFAULT_MODEL_ID
-    } finally {
-        isFetchingModels.value = false
-    }
-}
-
-const mapModelsToOptions = (models: ApiModel[]): ModelOption[] => {
-    const uniqueIds = new Set<string>()
-    const options: ModelOption[] = []
-
-    models.forEach(model => {
-        if (!model?.id || uniqueIds.has(model.id)) return
-        uniqueIds.add(model.id)
-
-        const supportsImages = detectImageSupport(model)
-        const label = buildModelLabel(model)
-        const description = (typeof model.description === 'string' && model.description.trim()) ||
-            (typeof (model as Record<string, unknown>).about === 'string' && String((model as Record<string, unknown>).about).trim()) ||
-            ''
-
-        options.push({
-            id: model.id,
-            label,
-            description,
-            supportsImages
-        })
-    })
-
-    return options.sort((a, b) => {
-        if (a.supportsImages !== b.supportsImages) {
-            return a.supportsImages ? -1 : 1
-        }
-        return a.label.localeCompare(b.label)
-    })
-}
-
-const detectImageSupport = (model: ApiModel): boolean => {
-    const caps = model.capabilities
-    if (caps && typeof caps === 'object') {
-        if ((caps as Record<string, unknown>).image === true) return true
-        if ((caps as Record<string, unknown>).images === true) return true
-        if ((caps as Record<string, unknown>).vision === true) return true
-        if ((caps as Record<string, unknown>).multimodal === true) return true
-    }
-
-    const tags = (model as Record<string, unknown>).tags
-    if (Array.isArray(tags) && tags.some(tag => typeof tag === 'string' && /image|vision|photo|picture|art|draw/i.test(tag))) {
-        return true
-    }
-
-    return /image|vision|flux|art|picture|photo|illustration/i.test(model.id)
-}
-
-const buildModelLabel = (model: ApiModel): string => {
-    if (model.name && typeof model.name === 'string' && model.name.trim()) {
-        return model.name.trim()
-    }
-    const segments = model.id.split('/')
-    const lastSegment = segments[segments.length - 1]
-    return lastSegment || model.id
-}
-
-const handleModelPicked = () => {
-    if (!selectedModel.value.trim()) return
-    modelsError.value = null
-    
-
-    setTimeout(() => {
-        if (selectedModel.value.trim()) {
-            
-        }
-    }, 600)
-}
 
 const restoreModelOptionsFromCache = (endpoint: string) => {
     const trimmedEndpoint = endpoint.trim()
@@ -518,9 +420,6 @@ const handleTextToImageGenerate = async () => {
     }
 }
 
-const handlePushTextImageToUpload = () => {
-    pushImageToUpload(textToImageResult.value)
-}
 
 const handlePushDisplayResult = () => {
     pushImageToUpload(displayResult.value)
@@ -605,11 +504,4 @@ const handleGenerate = async () => {
     }
 }
 
-const handleReset = () => {
-    selectedImages.value = []
-    selectedStyle.value = ''
-    customPrompt.value = ''
-    result.value = null
-    error.value = null
-}
 </script>

@@ -17,7 +17,7 @@
 
             <!-- Result Image -->
             <div v-else-if="result" class="w-full h-full flex items-center justify-center relative">
-                <img :src="result" alt="生成的艺术作品" class="max-w-full max-h-[600px] rounded-lg border-2 border-black shadow-lg object-contain" />
+                <img :src="displaySrc" alt="生成的艺术作品" class="max-w-full max-h-[600px] rounded-lg border-2 border-black shadow-lg object-contain" />
                 <div class="absolute bottom-4 right-4 flex flex-col gap-2 items-stretch">
                     <button
                         v-if="canPush"
@@ -48,7 +48,9 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
     result: string | null
     loading: boolean
     error: string | null
@@ -59,4 +61,21 @@ defineEmits<{
     download: []
     push: []
 }>()
+
+const looksLikeBase64 = (input: string): boolean => {
+    const sanitized = input.replace(/\s+/g, '')
+    if (sanitized.length < 100) return false
+    if (sanitized.length % 4 !== 0) return false
+    return /^[A-Za-z0-9+/]+={0,2}$/.test(sanitized)
+}
+
+const displaySrc = computed(() => {
+    const v = props.result || ''
+    const t = v.trim()
+    if (!t) return ''
+    if (t.startsWith('data:image/')) return t
+    if (/^https?:\/\//i.test(t)) return t
+    if (looksLikeBase64(t)) return `data:image/png;base64,${t.replace(/\s+/g, '')}`
+    return t
+})
 </script>
