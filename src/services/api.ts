@@ -83,6 +83,26 @@ export async function generateImage(request: GenerateRequest, maxRetries: number
 
             // 尝试解析生成的图片 URL（兼容多种返回格式）
             const urlRegex = /(https?:\/\/[^\s"'`]+?\.(?:png|jpe?g|webp|gif))/i
+            const looksLikeBase64 = (input: string): boolean => {
+                if (!input) return false
+                const sanitized = input.replace(/\s+/g, '')
+                if (sanitized.length < 100) return false
+                // Base64 字符串长度通常是 4 的倍数
+                if (sanitized.length % 4 !== 0) return false
+                return /^[A-Za-z0-9+/]+={0,2}$/.test(sanitized)
+            }
+
+            const normalizeImageData = (input: string): string => {
+                const trimmed = input.trim()
+                if (trimmed.startsWith('data:image/')) return trimmed
+                if (/^https?:\/\//i.test(trimmed)) return trimmed
+                if (looksLikeBase64(trimmed)) {
+                    const sanitized = trimmed.replace(/\s+/g, '')
+                    return `data:image/png;base64,${sanitized}`
+                }
+                return trimmed
+            }
+
             const extractFromString = (input: string): string | null => {
                 if (!input || typeof input !== 'string') return null
                 // 先尝试直接匹配图片 URL
@@ -100,6 +120,7 @@ export async function generateImage(request: GenerateRequest, maxRetries: number
                 }
                 // 支持 base64 data URI
                 if (input.startsWith('data:image/')) return input
+                if (looksLikeBase64(input)) return input
                 return null
             }
 
@@ -127,8 +148,9 @@ export async function generateImage(request: GenerateRequest, maxRetries: number
             }
 
             if (imageUrl) {
+                const normalizedImageUrl = normalizeImageData(imageUrl)
                 console.log(`成功生成图片 (第 ${attempt} 次尝试)`)
-                return { imageUrl }
+                return { imageUrl: normalizedImageUrl }
             }
 
             // 如果是文本回复或空回复，记录错误并重试
